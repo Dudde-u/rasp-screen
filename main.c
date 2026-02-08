@@ -12,6 +12,7 @@ void draw_test_pattern(int fd);
 int send_data_i2c(int fd, uint8_t *data, int len);
 void clear_display(int fd);
 void draw_digit(int fd, int num);
+void draw_digit_fullscreen(int fd, int number); 
 int init(int fd);
 
 int main() {
@@ -23,7 +24,7 @@ int main() {
     return -1;
   }
   init(fd);
-  draw_digit(fd, 4);
+  draw_digit_fullscreen(fd, 4);
   // draw_test_pattern(fd);
   // clear_display(fd);
   close(fd);
@@ -160,4 +161,67 @@ void draw_digit(int fd, int number) {
   for (int page = 4; page < 8; page++) {
     send_data_i2c(fd, empty, 128);
   }
+}
+const uint8_t font_base[9][5] = {
+    // 1
+    {0x00, 0x42, 0x7F, 0x40, 0x00},
+    // 2
+    {0x62, 0x51, 0x49, 0x49, 0x46},
+    // 3
+    {0x21, 0x41, 0x49, 0x4D, 0x33},
+    // 4
+    {0x18, 0x14, 0x12, 0x7F, 0x10},
+    // 5
+    {0x27, 0x45, 0x45, 0x45, 0x39},
+    // 6
+    {0x3C, 0x4A, 0x49, 0x49, 0x31},
+    // 7
+    {0x03, 0x01, 0x71, 0x09, 0x07},
+    // 8
+    {0x36, 0x49, 0x49, 0x49, 0x36},
+    // 9
+    {0x26, 0x49, 0x49, 0x29, 0x1E}
+};
+void draw_digit_fullscreen(int fd, int number) {
+    if (number < 1 || number > 9) {
+        printf("Error: number must be between 1 and 9\n");
+        return;
+    }
+    
+    clear_display(fd);
+    
+    // Scale factor: we'll make each pixel 20x wide and use all 8 pages (64 pixels tall)
+    // Original is 5 cols x 7 rows, scaled up: 100 cols x 56 rows (with some padding)
+    
+    int scale_x = 20;  // Each column becomes 20 pixels wide
+    int scale_y = 8;   // Each row becomes 8 pixels tall (spreads across pages)
+    
+    // For each of the 8 pages
+    for (int page = 0; page < 8; page++) {
+        uint8_t line[128];
+        memset(line, 0x00, 128);
+        
+        // Determine which row of the original 7-pixel font we're working with
+        // Pages 0-7 map to original rows 0-6 (with some padding)
+        int font_row = page;  // Simplified: each page shows one original row, stretched
+        
+        if (font_row < 7) {
+            // For each of the 5 original columns
+            for (int col = 0; col < 5; col++) {
+                uint8_t font_byte = font_base[number - 1][col];
+                
+                // Check if this bit (row) is set in the original font
+                if (font_byte & (1 << font_row)) {
+                    // Fill the scaled region
+                    int start_x = 14 + (col * scale_x);  // Center with padding
+                    
+                    for (int x = 0; x < scale_x && (start_x + x) < 128; x++) {
+                        line[start_x + x] = 0xFF;  // Fill entire byte (8 pixels)
+                    }
+                }
+            }
+        }
+        
+        send_data_i2c(fd, line, 128);
+    }
 }
